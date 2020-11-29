@@ -1,18 +1,22 @@
 pub mod cli;
 
-use eyre::Result;
-use serde::Deserialize;
+use eyre::{eyre, Result};
+use git2::Repository;
+use git_url_parse::GitUrl;
+use hubcaps::labels::LabelOptions;
+use serde::{Deserialize, Deserializer};
 use std::convert::TryFrom;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use tempfile::NamedTempFile;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Label {
+    // #[serde(deserialize_with = "no_pound")]
     pub color: String,
     pub name: String,
-    pub description: String,
+    pub description: Option<String>,
 }
 
 impl PartialEq for Label {
@@ -32,6 +36,40 @@ impl TryFrom<&str> for Label {
     }
 }
 
+impl From<LabelOptions> for Label {
+    fn from(item: LabelOptions) -> Self {
+        Label {
+            color: item.color.replace("#", ""),
+            name: item.name,
+            description: Some(item.description),
+        }
+    }
+}
+
+impl Label {
+    pub fn to_label_options(&self) -> LabelOptions {
+        LabelOptions {
+            color: self.color.replace("#", ""),
+            name: self.name.clone(),
+            description: match self.description.clone() {
+                Some(d) => d,
+                None => String::from(""),
+            },
+        }
+    }
+}
+
+// Buggy deserialization:
+//    Message("invalid type: string \"#FEFEFE\", expected a borrowed string",
+//    Some(Pos { marker: Marker { index: 23, line: 3, col: 11 }, path: "labels[0].color" }))
+fn no_pound<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: &str = Deserialize::deserialize(deserializer)?;
+    Ok(s.replace("#", ""))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Labels {
     pub labels: Vec<Label>,
@@ -49,6 +87,31 @@ impl PartialEq for Labels {
     fn eq(&self, other: &Self) -> bool {
         self.labels == other.labels
     }
+}
+
+pub fn get_repo_info(path: PathBuf) -> Result<(String, Option<String>)> {
+    let repo = Repository::discover(&path)?;
+    let remote = repo.find_remote("origin")?;
+    let remote_url = match remote.url() {
+        Some(r) => r,
+        None => {
+            return Err(eyre!(
+                r#"cannot find the remote url from repository located at "{:?}""#,
+                path,
+            ))
+        }
+    };
+    let parsed = match GitUrl::parse(remote_url) {
+        Ok(p) => p,
+        Err(e) => {
+            return Err(eyre!(
+                r#"cannot parse remote url from repository "{:?}": {}"#,
+                path,
+                e
+            ))
+        }
+    };
+    Ok((parsed.name, parsed.owner))
 }
 
 // impl<'a> TryFrom(&str) for Labels {
@@ -75,7 +138,7 @@ mod tests {
         let expected = Label {
             color: "#FEFEFE".to_string(),
             name: "bug".to_string(),
-            description: "This is a bug".to_string(),
+            description: Some("This is a bug".to_string()),
         };
         assert_eq!(actual, expected);
     }
@@ -86,7 +149,7 @@ mod tests {
         let expected = vec![Label {
             color: "#FEFEFE".to_string(),
             name: "bug".to_string(),
-            description: "This is a bug".to_string(),
+            description: Some("This is a bug".to_string()),
         }];
         assert_eq!(actual, expected);
     }
@@ -98,7 +161,7 @@ mod tests {
             labels: vec![Label {
                 color: "#FEFEFE".to_string(),
                 name: "bug".to_string(),
-                description: "This is a bug".to_string(),
+                description: Some("This is a bug".to_string()),
             }],
         };
         assert_eq!(actual, expected);
@@ -113,9 +176,16 @@ mod tests {
             labels: vec![Label {
                 color: "#FEFEFE".to_string(),
                 name: "bug".to_string(),
-                description: "This is a bug".to_string(),
+                description: Some("This is a bug".to_string()),
             }],
         };
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_get_repo_info() {
+        let (name, owner) = get_repo_info(PathBuf::from(".")).unwrap();
+        assert_eq!(name, "labelr-rs");
+        assert_eq!(owner.unwrap(), "rgreinho");
     }
 }
