@@ -4,12 +4,10 @@ use eyre::{eyre, Result};
 use git2::Repository;
 use git_url_parse::GitUrl;
 use hubcaps::labels::LabelOptions;
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 use std::convert::TryFrom;
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
-use tempfile::NamedTempFile;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Label {
@@ -62,13 +60,13 @@ impl Label {
 // Buggy deserialization:
 //    Message("invalid type: string \"#FEFEFE\", expected a borrowed string",
 //    Some(Pos { marker: Marker { index: 23, line: 3, col: 11 }, path: "labels[0].color" }))
-fn no_pound<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s: &str = Deserialize::deserialize(deserializer)?;
-    Ok(s.replace("#", ""))
-}
+// fn no_pound<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
+// where
+//     D: Deserializer<'de>,
+// {
+//     let s: &str = Deserialize::deserialize(deserializer)?;
+//     Ok(s.replace("#", ""))
+// }
 
 #[derive(Debug, Deserialize)]
 pub struct Labels {
@@ -126,6 +124,8 @@ pub fn get_repo_info(path: PathBuf) -> Result<(String, Option<String>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
 
     const SINGLE_LABEL: &str = "---\ncolor: \"#FEFEFE\"\nname: bug\ndescription: This is a bug";
     const LABEL_LIST: &str = "---\n- color: \"#FEFEFE\"\n  name: bug\n  description: This is a bug";
