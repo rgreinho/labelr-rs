@@ -1,17 +1,10 @@
-use clap::{crate_name, Clap, IntoApp};
-use color_eyre::{eyre::eyre, eyre::Report, eyre::Result, Section, SectionExt};
-use futures::future::{self, try_join_all};
-use futures::prelude::*;
-use hubcaps::{
-    errors::Error, labels::Label, labels::LabelOptions, repositories::Repository,
-    repositories::UserRepoListOptions, Credentials, Github,
-};
+use clap::Clap;
+use color_eyre::{eyre::eyre, eyre::Report, eyre::Result};
+use futures::future::try_join_all;
+use hubcaps::{repositories::Repository, repositories::UserRepoListOptions, Credentials, Github};
 use labelr::cli::Opts;
 use labelr::{get_repo_info, Labels};
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fs;
-use std::iter::FromIterator;
 
 #[tokio::main]
 async fn main() -> Result<(), Report> {
