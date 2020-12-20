@@ -68,7 +68,7 @@ impl Label {
 //     Ok(s.replace("#", ""))
 // }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 pub struct Labels {
     pub labels: Vec<Label>,
 }
@@ -78,12 +78,6 @@ impl Labels {
         let contents = fs::read_to_string(path)?;
         let labels: Labels = serde_yaml::from_str(&contents)?;
         Ok(labels)
-    }
-}
-
-impl PartialEq for Labels {
-    fn eq(&self, other: &Self) -> bool {
-        self.labels == other.labels
     }
 }
 
@@ -111,15 +105,6 @@ pub fn get_repo_info(path: PathBuf) -> Result<(String, Option<String>)> {
     };
     Ok((parsed.name, parsed.owner))
 }
-
-// impl<'a> TryFrom(&str) for Labels {
-//     type Error = serde_yaml::Error;
-
-//     fn try_from(s: &str) -> Result<Self, Self::Error> {
-//         let l: Vec<Labels> = serde_yaml::from_str(&s)?;
-//         Ok(l)
-//     }
-// }
 
 #[cfg(test)]
 mod tests {
