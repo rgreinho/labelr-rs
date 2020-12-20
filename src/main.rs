@@ -5,6 +5,7 @@ use hubcaps::{repositories::Repository, repositories::UserRepoListOptions, Crede
 use labelr::cli::Opts;
 use labelr::{get_repo_info, Labels};
 use std::fs;
+use tracing::{event, Level};
 
 #[tokio::main]
 async fn main() -> Result<(), Report> {
@@ -15,6 +16,15 @@ async fn main() -> Result<(), Report> {
 
     let opts: Opts = labelr::cli::Opts::parse();
     dbg!(&opts);
+
+    // Configure tracing.
+    let log_level = match opts.verbose {
+        0 => Level::WARN,
+        1 => Level::INFO,
+        2 => Level::DEBUG,
+        _ => Level::TRACE,
+    };
+    tracing_subscriber::fmt().with_max_level(log_level).init();
 
     // Collect the information in the following order:
     //   1. from repository
@@ -55,7 +65,7 @@ async fn main() -> Result<(), Report> {
     dbg!(&owner);
 
     // Load label file.
-    let labels = Labels::try_from_file(opts.file)?;
+    let labels = Labels::try_from_file(opts.file).expect("cannot load the label file");
 
     // Create the github client.
     let github = Github::new(
@@ -94,7 +104,7 @@ async fn main() -> Result<(), Report> {
         if opts.sync {
             let mut tasks = Vec::new();
             for l in existing_labels.iter() {
-                println!("Deleting label: \"{}\"", &l.name);
+                event!(Level::INFO, "Deleting label: \"{}\"", &l.name);
                 tasks.push(ghlabels.delete(&l.name));
             }
             try_join_all(tasks).await?;
@@ -106,24 +116,24 @@ async fn main() -> Result<(), Report> {
             // In syncing mode, we simply create a new label since all the
             // existing ones were deleted.
             if opts.sync {
-                println!("Creating label: \"{}\"", label.name);
+                event!(Level::INFO, "Creating label: \"{}\"", label.name);
                 tasks.push(ghlabels.create(&label.to_label_options()));
             } else {
                 // Otherwise we check whether the label exists.
                 if existing_labels.iter().any(|l| label.name == l.name) {
                     // And either update it.
                     if opts.update_existing {
-                        println!("Updating existing label: \"{}\"", label.name);
+                        event!(Level::INFO, "Updating existing label: \"{}\"", label.name);
                         tasks.push(ghlabels.update(&label.name, &label.to_label_options()));
                     }
                     // Or skip it.
                     else {
-                        println!("Skipping existing label: \"{}\"", label.name);
+                        event!(Level::INFO, "Skipping existing label: \"{}\"", label.name);
                     }
                 }
                 // If the label does not exist we simply create it.
                 else {
-                    println!("Creating label: \"{}\"", label.name);
+                    event!(Level::INFO, "Creating label: \"{}\"", label.name);
                     tasks.push(ghlabels.create(&label.to_label_options()));
                 }
             }
@@ -134,34 +144,3 @@ async fn main() -> Result<(), Report> {
     }
     Ok(())
 }
-
-// This section bellow works well, but we can probably do better.
-// match ghlabels.create(&bl.to_label_options()).await {
-//     Ok(v) => println!("Label \"{}\" created", v.name),
-//     Err(e) => {
-//         dbg!(&e);
-//         println!("cannot create label \"{}\"", bl.name);
-//         match e {
-//             Error::Fault { code, error } => {
-//                 println!("client error: {} - {}", code, error.message);
-//                 match error.errors {
-//                     Some(errors) => {
-//                         for err in errors.iter() {
-//                             println!("reason: {}", err.code);
-//                         }
-//                         if errors.iter().any(|e| e.code == "already_exists") {
-//                             if opts.update_existing {
-//                                 println!("updating existing label: \"{}\"", bl.name);
-//                                 ghlabels.update(&bl.name, &bl.to_label_options()).await?;
-//                             } else {
-//                                 println!("skipping existing label: \"{}\"", bl.name);
-//                             }
-//                         }
-//                     }
-//                     None => println!("unknown error"),
-//                 }
-//             }
-//             _ => println!("other reason: {}", e),
-//         }
-//     }
-// };
