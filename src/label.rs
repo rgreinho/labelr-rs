@@ -1,11 +1,11 @@
-use eyre::{eyre, Result};
-use git2::Repository;
-use git_url_parse::GitUrl;
+use eyre::Result;
+use futures::future::try_join_all;
 use hubcaps::labels::LabelOptions;
 use serde::Deserialize;
 use std::convert::TryFrom;
 use std::fs;
 use std::path::PathBuf;
+use tracing::{event, Level};
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 pub struct Label {
@@ -71,34 +71,23 @@ impl Labels {
     }
 }
 
-pub fn get_repo_info(path: PathBuf) -> Result<(String, Option<String>)> {
-    let repo = Repository::discover(&path)?;
-    let remote = repo.find_remote("origin")?;
-    let remote_url = match remote.url() {
-        Some(r) => r,
-        None => {
-            return Err(eyre!(
-                r#"cannot find the remote url from repository located at "{:?}""#,
-                path,
-            ))
-        }
-    };
-    let parsed = match GitUrl::parse(remote_url) {
-        Ok(p) => p,
-        Err(e) => {
-            return Err(eyre!(
-                r#"cannot parse remote url from repository "{:?}": {}"#,
-                path,
-                e
-            ))
-        }
-    };
-    Ok((parsed.name, parsed.owner))
+pub async fn delete_labels(
+    ghlabels: hubcaps::labels::Labels,
+    labels: Vec<hubcaps::labels::Label>,
+) -> Result<()> {
+    let mut tasks = Vec::new();
+    for l in labels.iter() {
+        event!(Level::INFO, "Deleting label: \"{}\"", &l.name);
+        tasks.push(ghlabels.delete(&l.name));
+    }
+    try_join_all(tasks).await?;
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::git::get_repo_info_from_remote;
     use std::io::Write;
     use tempfile::NamedTempFile;
 
@@ -159,7 +148,7 @@ mod tests {
 
     #[test]
     fn test_get_repo_info() {
-        let (name, owner) = get_repo_info(PathBuf::from(".")).unwrap();
+        let (name, owner) = get_repo_info_from_remote(PathBuf::from(".")).unwrap();
         assert_eq!(name, "labelr-rs");
         assert_eq!(owner.unwrap(), "rgreinho");
     }
