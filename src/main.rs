@@ -3,7 +3,7 @@ use color_eyre::{eyre::eyre, eyre::Report, eyre::Result};
 use futures::future::try_join_all;
 use hubcaps::{repositories::Repository, repositories::UserRepoListOptions, Credentials, Github};
 use labelr::cli::Opts;
-use labelr::{get_repo_info, Labels};
+use labelr::label::{get_repo_info, Labels};
 use std::fs;
 use tracing::{event, Level};
 
