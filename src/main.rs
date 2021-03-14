@@ -3,8 +3,8 @@ use color_eyre::{eyre::eyre, eyre::Report, eyre::Result};
 use futures::future::try_join_all;
 use hubcaps::{repositories::Repository, repositories::UserRepoListOptions, Credentials, Github};
 use labelr::cli::Opts;
-use labelr::label::{get_repo_info, Labels};
-use std::fs;
+use labelr::git::infer_repo_info;
+use labelr::label::{delete_labels, Labels};
 use tracing::{event, Level};
 
 #[tokio::main]
@@ -32,35 +32,11 @@ async fn main() -> Result<(), Report> {
     //   3. from CLI
 
     // Get the owner and repository.
-    let (repository, infered_owner) = match get_repo_info(opts.repository.clone()) {
-        Ok(info) => info,
-
-        // If we cannot infer the values from the repository, the name should
-        // be the name of the directory specified in opts.repository, and the
-        // owner should come from opts.owner.
-        Err(_) => match fs::canonicalize(opts.repository) {
-            Ok(f) => match f.file_name() {
-                Some(f) => match f.to_str() {
-                    Some(f) => (String::from(f), opts.owner),
-                    None => return Err(eyre!("invalid repository name")),
-                },
-                None => return Err(eyre!("invalid repository path")),
-            },
-            Err(e) => return Err(eyre!("the repository path does not exist: {}", e)),
-        },
+    let (repository, owner) = match infer_repo_info(opts.repository, opts.owner, opts.organization)
+    {
+        Ok(values) => values,
+        Err(e) => return Err(eyre!("cannot infer the repository/owner values: {}", e)),
     };
-
-    // Retrieve the owner from the infered_owner.
-    let owner = match infered_owner {
-        Some(o) => o,
-
-        // If no owner was found, the organization will be used.
-        None => match opts.organization {
-            Some(org) => org,
-            None => return Err(eyre!("no owner name or organization was found")),
-        },
-    };
-
     dbg!(&repository);
     dbg!(&owner);
 
@@ -98,16 +74,12 @@ async fn main() -> Result<(), Report> {
         let ghlabels = repo.labels();
 
         // List existing labels.
-        let existing_labels = ghlabels.list().await?;
+        let existing_labels = repo.labels().list().await?;
+        dbg!(&existing_labels);
 
         // Delete existing labels if syncing mode is enabled.
         if opts.sync {
-            let mut tasks = Vec::new();
-            for l in existing_labels.iter() {
-                event!(Level::INFO, "Deleting label: \"{}\"", &l.name);
-                tasks.push(ghlabels.delete(&l.name));
-            }
-            try_join_all(tasks).await?;
+            delete_labels(repo.labels(), repo.labels().list().await?).await?;
         }
 
         // Apply the labels.
@@ -139,7 +111,7 @@ async fn main() -> Result<(), Report> {
             }
         }
 
-        // Process all the tasks.
+        // Process all the tasks..
         try_join_all(tasks).await?;
     }
     Ok(())
