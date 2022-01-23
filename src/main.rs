@@ -1,4 +1,4 @@
-use clap::Clap;
+use clap::Parser;
 use color_eyre::{eyre::eyre, eyre::Report, eyre::Result};
 use futures::future::try_join_all;
 use hubcaps::{repositories::Repository, repositories::UserRepoListOptions, Credentials, Github};
@@ -32,13 +32,11 @@ async fn main() -> Result<(), Report> {
     //   3. from CLI
 
     // Get the owner and repository.
-    let (repository, owner) = match infer_repo_info(opts.repository, opts.owner, opts.organization)
+    let (repository, owner) = match infer_repo_info(opts.repository, opts.owner, &opts.organization)
     {
         Ok(values) => values,
         Err(e) => return Err(eyre!("cannot infer the repository/owner values: {}", e)),
     };
-    dbg!(&repository);
-    dbg!(&owner);
 
     // Load label file.
     let labels = Labels::try_from_file(opts.file).expect("cannot load the label file");
@@ -61,7 +59,6 @@ async fn main() -> Result<(), Report> {
         for user_repo in &user_repos {
             repos.push(github.repo(&owner, &user_repo.name));
         }
-        dbg!(&user_repos);
     }
     // Or use only the current repository.
     else {
@@ -74,8 +71,7 @@ async fn main() -> Result<(), Report> {
         let ghlabels = repo.labels();
 
         // List existing labels.
-        let existing_labels = repo.labels().list().await?;
-        dbg!(&existing_labels);
+        let existing_labels = ghlabels.list().await?;
 
         // Delete existing labels if syncing mode is enabled.
         if opts.sync {

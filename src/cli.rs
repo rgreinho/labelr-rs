@@ -1,9 +1,9 @@
-use clap::{crate_name, ArgSettings, Clap};
+use clap::{ArgSettings, Parser};
 use std::path::PathBuf;
 
 // Labelr main options.
-#[derive(Clap, Debug)]
-#[clap(name = crate_name!(), author, about, version)]
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
 pub struct Opts {
     /// Sets the verbosity level
     #[clap(short, long, parse(from_occurrences))]
