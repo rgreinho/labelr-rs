@@ -19,7 +19,7 @@ impl TryFrom<&str> for Label {
     type Error = serde_yaml::Error;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
-        let l: Label = serde_yaml::from_str(&s)?;
+        let l: Label = serde_yaml::from_str(s)?;
         Ok(l)
     }
 }

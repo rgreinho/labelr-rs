@@ -33,7 +33,7 @@ pub fn get_repo_info_from_remote(path: PathBuf) -> Result<(String, Option<String
 pub fn infer_repo_info(
     path: PathBuf,
     owner: Option<String>,
-    organization: Option<String>,
+    organization: &Option<String>,
 ) -> Result<(String, String)> {
     // Get the owner and repository from the remote URL.
     let (repository, infered_owner) = match get_repo_info_from_remote(path.clone()) {
@@ -73,7 +73,7 @@ pub fn infer_repo_info(
             Ok(o) => o,
             Err(_) => match organization {
                 // If no owner was found, fallback to the provided organization value.
-                Some(org) => org,
+                Some(org) => org.to_string(),
                 None => return Err(eyre!("no owner name or organization was found")),
             },
         },
