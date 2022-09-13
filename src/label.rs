@@ -7,7 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 use tracing::{event, Level};
 
-#[derive(Debug, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 pub struct Label {
     // #[serde(deserialize_with = "no_pound")]
     pub color: String,
@@ -27,7 +27,7 @@ impl TryFrom<&str> for Label {
 impl From<LabelOptions> for Label {
     fn from(item: LabelOptions) -> Self {
         Label {
-            color: item.color.replace("#", ""),
+            color: item.color.replace('#', ""),
             name: item.name,
             description: Some(item.description),
         }
@@ -37,7 +37,7 @@ impl From<LabelOptions> for Label {
 impl Label {
     pub fn to_label_options(&self) -> LabelOptions {
         LabelOptions {
-            color: self.color.replace("#", ""),
+            color: self.color.replace('#', ""),
             name: self.name.clone(),
             description: match self.description.clone() {
                 Some(d) => d,
@@ -58,7 +58,7 @@ impl Label {
 //     Ok(s.replace("#", ""))
 // }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct Labels {
     pub labels: Vec<Label>,
 }
