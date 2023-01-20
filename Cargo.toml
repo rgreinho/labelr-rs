@@ -22,7 +22,7 @@ color-eyre = "0.6.0"
 eyre = "0.6.6"
 futures = "0.3.19"
 git-url-parse = "0.4.0"
-git2 = "0.13.25"
+git2 = "0.16.1"
 hubcaps = { git = "https://github.com/softprops/hubcaps", branch = "master" }
 serde = { version = "1.0.135", features = ["derive"] }
 serde_yaml = "0.8.23"
