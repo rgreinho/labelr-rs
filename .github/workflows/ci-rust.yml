@@ -102,7 +102,7 @@ jobs:
         uses: actions/download-artifact@v2
       - name: Get Changelog Entry
         id: changelog_reader
-        uses: mindsers/changelog-reader-action@v1
+        uses: mindsers/changelog-reader-action@v2
         with:
           path: CHANGELOG.md/CHANGELOG.md
       - name: Publish the release
