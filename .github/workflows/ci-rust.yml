@@ -13,110 +13,38 @@ on:
       - "[0-9]+.[0-9]+.[0-9]+*"
 
 jobs:
-  check:
+  lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v2
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: check
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo check
+      - run: cargo clippy -- -D warnings
 
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-
-  format:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - run: rustup component add rustfmt
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
-
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - run: rustup component add clippy
-      - uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: -- -D warnings
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test
 
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@master
-      - uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build
 
   release:
     needs:
       - build
-      - check
-      - format
       - lint
       - test
     runs-on: ${{ matrix.os }}
@@ -149,14 +77,14 @@ jobs:
           args: --release --all-features --target ${{ matrix.target }}
       - name: Package the binary
         run: >
-          tar cfz cartigan-cli-${{ steps.tag.outputs.TAG }}-${{ matrix.target }}.tar.gz
+          tar cfz labelr-${{ steps.tag.outputs.TAG }}-${{ matrix.target }}.tar.gz
           -C target/${{ matrix.target }}/release/
-          cartigan-cli
+          labelr
       - name: Upload artifact
         uses: actions/upload-artifact@v2
         with:
-          name: cartigan-cli-${{ steps.tag.outputs.TAG }}-${{ matrix.target }}.tar.gz
-          path: cartigan-cli-${{ steps.tag.outputs.TAG }}-${{ matrix.target }}.tar.gz
+          name: labelr-${{ steps.tag.outputs.TAG }}-${{ matrix.target }}.tar.gz
+          path: labelr-${{ steps.tag.outputs.TAG }}-${{ matrix.target }}.tar.gz
       - name: Upload CHANGELOG.md
         uses: actions/upload-artifact@v2
         with:
@@ -183,4 +111,3 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           body: ${{ steps.changelog_reader.outputs.changes }}
-          files: "**/*/cartigan-cli-*.tar.gz"
