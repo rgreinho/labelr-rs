@@ -1,12 +1,12 @@
-use clap::{ArgSettings, Parser};
+use clap::{crate_name, ArgAction, Parser, ValueHint};
 use std::path::PathBuf;
 
 // Labelr main options.
 #[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
+#[clap(name = crate_name!(), author, about, version)]
 pub struct Opts {
     /// Sets the verbosity level
-    #[clap(short, long, parse(from_occurrences))]
+    #[clap(short, long,  action = ArgAction::Count)]
     pub verbose: u8,
     /// Set organization name
     #[clap(long, env = "GITHUB_ORGANIZATION")]
@@ -18,12 +18,13 @@ pub struct Opts {
     #[clap(
         long,
         env = "GITHUB_REPOSITORY",
-        parse(from_os_str),
+        value_parser,
+        value_hint = ValueHint::DirPath,
         default_value = "."
     )]
     pub repository: PathBuf,
     /// Set GitHub token
-    #[clap(long, env = "GITHUB_TOKEN", setting = ArgSettings::HideEnvValues)]
+    #[clap(long, env = "GITHUB_TOKEN", hide_env_values = true)]
     pub token: String,
     /// Synchronize the labels
     #[clap(long)]
@@ -32,7 +33,7 @@ pub struct Opts {
     #[clap(long)]
     pub org: bool,
     /// Specify the file containing the labels
-    #[clap(parse(from_os_str), default_value = "labels.yml")]
+    #[clap(default_value = "labels.yml")]
     pub file: PathBuf,
     /// Update existing labels
     #[clap(long)]
