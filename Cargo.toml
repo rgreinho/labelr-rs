@@ -23,7 +23,7 @@ futures = "0.3.27"
 git-url-parse = "0.4.0"
 git2 = "0.16.1"
 hubcaps = { git = "https://github.com/softprops/hubcaps", branch = "master" }
-serde = { version = "1.0.135", features = ["derive"] }
+serde = { version = "1.0.155", features = ["derive"] }
 serde_yaml = "0.9.19"
 tokio = { version = "1.24.2", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1.29"
