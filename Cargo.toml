@@ -25,7 +25,7 @@ git2 = "0.17.1"
 hubcaps = { git = "https://github.com/softprops/hubcaps", branch = "master" }
 serde = { version = "1.0.163", features = ["derive"] }
 serde_yaml = "0.9.21"
-tokio = { version = "1.28.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.28.1", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1.29"
 tracing-subscriber = "0.3.17"
 
