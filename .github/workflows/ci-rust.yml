@@ -81,12 +81,12 @@ jobs:
           -C target/${{ matrix.target }}/release/
           labelr
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: labelr-${{ steps.tag.outputs.TAG }}-${{ matrix.target }}.tar.gz
           path: labelr-${{ steps.tag.outputs.TAG }}-${{ matrix.target }}.tar.gz
       - name: Upload CHANGELOG.md
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: CHANGELOG.md
           path: CHANGELOG.md
