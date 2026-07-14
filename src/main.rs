@@ -1,10 +1,9 @@
 use clap::Parser;
 use color_eyre::{eyre::eyre, eyre::Report, eyre::Result};
-use futures::future::try_join_all;
-use hubcaps::{repositories::Repository, repositories::UserRepoListOptions, Credentials, Github};
 use labelr::cli::Opts;
 use labelr::git::infer_repo_info;
 use labelr::label::{delete_labels, Labels};
+use rand::Rng;
 use tracing::{event, Level};
 
 #[tokio::main]
@@ -41,74 +40,124 @@ async fn main() -> Result<(), Report> {
     // Load label file.
     let labels = Labels::try_from_file(opts.file).expect("cannot load the label file");
 
-    // Create the github client.
-    let github = Github::new(
-        concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
-        Credentials::Token(opts.token),
-    )?;
+    // Create the GitHub client using octocrab with the provided token.
+    let octo = octocrab::OctocrabBuilder::default()
+        .personal_token(opts.token.clone())
+        .build()
+        .expect("failed to build octocrab client");
 
-    // Prepare the collection of repositories to process.
-    let mut repos = Vec::<Repository>::new();
+    // Prepare the collection of repository identifiers (owner, repo).
+    let mut repos: Vec<(String, String)> = Vec::new();
 
     // List organisation repositories.
     if opts.org {
-        let ghrepos = github.user_repos(&owner);
-        let user_repos = ghrepos
-            .list(&UserRepoListOptions::builder().build())
+        // List all organization repositories with pagination
+        let page = octo
+            .orgs(&owner)
+            .list_repos()
+            .per_page(100u8)
+            .send()
             .await?;
-        for user_repo in &user_repos {
-            repos.push(github.repo(&owner, &user_repo.name));
+        let user_repos = octo.all_pages::<octocrab::models::Repository>(page).await?;
+        for user_repo in user_repos.iter() {
+            repos.push((owner.clone(), user_repo.name.clone()));
         }
     }
     // Or use only the current repository.
     else {
-        repos = vec![github.repo(&owner, &repository)];
+        repos.push((owner.clone(), repository));
     }
 
-    // Process each repository.
-    for repo in repos {
-        // Get the label service.
-        let ghlabels = repo.labels();
+    // Retry helper: retries on GitHub 429 or server errors and on transient transport errors.
+    use labelr::retry::retry_octocrab;
 
-        // List existing labels.
-        let existing_labels = ghlabels.list().await?;
+    // Process repositories concurrently with bounded parallelism.
+    use futures::StreamExt;
+    use std::sync::Arc;
 
-        // Delete existing labels if syncing mode is enabled.
-        if opts.sync {
-            delete_labels(repo.labels(), repo.labels().list().await?).await?;
-        }
+    let octo = Arc::new(octo);
+    let concurrency = 8usize;
 
-        // Apply the labels.
-        let mut tasks = Vec::new();
-        for label in &labels.labels {
-            // In syncing mode, we simply create a new label since all the
-            // existing ones were deleted.
-            if opts.sync {
-                event!(Level::INFO, "Creating label: \"{}\"", label.name);
-                tasks.push(ghlabels.create(&label.to_label_options()));
-            } else {
-                // Otherwise we check whether the label exists.
-                if existing_labels.iter().any(|l| label.name == l.name) {
-                    // And either update it.
-                    if opts.update_existing {
-                        event!(Level::INFO, "Updating existing label: \"{}\"", label.name);
-                        tasks.push(ghlabels.update(&label.name, &label.to_label_options()));
+    let sync = opts.sync;
+    let update_existing = opts.update_existing;
+
+    let repo_stream = futures::stream::iter(repos.into_iter().map(|(owner, repo_name)| {
+        let octo = octo.clone();
+        let labels_vec = labels.labels.clone();
+        async move {
+            // List existing labels for the repository with retries.
+            let labels_route = format!("/repos/{}/{}/labels", owner, repo_name);
+            let existing_labels: Vec<octocrab::models::Label> =
+                retry_octocrab(|| octo.get(&labels_route, None::<&()>), 5)
+                    .await
+                    .map_err(|e| eyre!(e))?;
+
+            // Delete existing labels if syncing mode is enabled.
+            if sync {
+                // Retry delete_labels a few times on error with exponential backoff.
+                let mut attempt = 0u32;
+                loop {
+                    match delete_labels(&octo, &owner, &repo_name, existing_labels.clone()).await {
+                        Ok(_) => break,
+                        Err(e) => {
+                            attempt += 1;
+                            if attempt >= 3 {
+                                return Err(eyre!(e));
+                            }
+                            let base_secs = 2u64.pow(attempt - 1);
+                            let mut rng = rand::thread_rng();
+                            let jitter_ms = rng.gen_range(0..(base_secs * 1000));
+                            let backoff =
+                                std::time::Duration::from_millis(base_secs * 1000 + jitter_ms);
+                            tokio::time::sleep(backoff).await;
+                        }
                     }
-                    // Or skip it.
-                    else {
-                        event!(Level::INFO, "Skipping existing label: \"{}\"", label.name);
-                    }
-                }
-                // If the label does not exist we simply create it.
-                else {
-                    event!(Level::INFO, "Creating label: \"{}\"", label.name);
-                    tasks.push(ghlabels.create(&label.to_label_options()));
                 }
             }
-        }
 
-        // Process all the tasks..
-        try_join_all(tasks).await?;
+            // Apply the labels sequentially per repository with retries.
+            for label in &labels_vec {
+                let body = serde_json::to_value(labelr::label::LabelBody::from(label))?;
+
+                if sync {
+                    event!(Level::INFO, "Creating label: \"{}\"", label.name);
+                    let create_route = format!("/repos/{}/{}/labels", owner, repo_name);
+                    let _created: octocrab::models::Label =
+                        retry_octocrab(|| octo.post(&create_route, Some(&body)), 5)
+                            .await
+                            .map_err(|e| eyre!(e))?;
+                } else {
+                    if existing_labels.iter().any(|l| label.name == l.name) {
+                        if update_existing {
+                            event!(Level::INFO, "Updating existing label: \"{}\"", label.name);
+                            let patch_route =
+                                format!("/repos/{}/{}/labels/{}", owner, repo_name, label.name);
+                            let _updated: octocrab::models::Label =
+                                retry_octocrab(|| octo.patch(&patch_route, Some(&body)), 5)
+                                    .await
+                                    .map_err(|e| eyre!(e))?;
+                        } else {
+                            event!(Level::INFO, "Skipping existing label: \"{}\"", label.name);
+                        }
+                    } else {
+                        event!(Level::INFO, "Creating label: \"{}\"", label.name);
+                        let create_route = format!("/repos/{}/{}/labels", owner, repo_name);
+                        let _created: octocrab::models::Label =
+                            retry_octocrab(|| octo.post(&create_route, Some(&body)), 5)
+                                .await
+                                .map_err(|e| eyre!(e))?;
+                    }
+                }
+            }
+
+            Ok(())
+        }
+    }))
+    .buffer_unordered(concurrency);
+
+    let results: Vec<Result<(), Report>> = repo_stream.collect().await;
+    for r in results.into_iter() {
+        r?;
     }
     Ok(())
 }
