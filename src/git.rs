@@ -9,11 +9,12 @@ pub fn get_repo_info_from_remote(path: PathBuf) -> Result<(String, Option<String
     let repo = Repository::discover(&path)?;
     let remote = repo.find_remote("origin")?;
     let remote_url = match remote.url() {
-        Some(r) => r,
-        None => {
+        Ok(r) => r,
+        Err(e) => {
             return Err(eyre!(
-                r#"cannot find the remote url from repository located at "{:?}""#,
+                r#"cannot find the remote url from repository located at "{:?}": {}"#,
                 path,
+                e
             ))
         }
     };
@@ -27,7 +28,20 @@ pub fn get_repo_info_from_remote(path: PathBuf) -> Result<(String, Option<String
             ))
         }
     };
-    Ok((parsed.name, parsed.owner))
+
+    // Extract owner and repo from the parsed path (e.g., "owner/repo.git" or "/owner/repo").
+    let p = parsed
+        .path()
+        .trim_start_matches('/')
+        .trim_end_matches(".git");
+    let parts: Vec<&str> = p.split('/').collect();
+    if parts.len() >= 2 {
+        let owner = parts[0].to_string();
+        let name = parts[1].to_string();
+        Ok((name, Some(owner)))
+    } else {
+        Ok((p.to_string(), None))
+    }
 }
 
 pub fn infer_repo_info(

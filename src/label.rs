@@ -1,15 +1,13 @@
 use eyre::Result;
 use futures::future::try_join_all;
-use hubcaps::labels::LabelOptions;
-use serde::Deserialize;
-use std::convert::TryFrom;
+use octocrab::Octocrab;
+use serde::{Deserialize, Serialize, Serializer};
 use std::fs;
 use std::path::PathBuf;
 use tracing::{event, Level};
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 pub struct Label {
-    // #[serde(deserialize_with = "no_pound")]
     pub color: String,
     pub name: String,
     pub description: Option<String>,
@@ -19,31 +17,62 @@ impl TryFrom<&str> for Label {
     type Error = serde_yaml::Error;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
-        let l: Label = serde_yaml::from_str(s)?;
-        Ok(l)
+        serde_yaml::from_str(s)
     }
 }
 
-impl From<LabelOptions> for Label {
-    fn from(item: LabelOptions) -> Self {
-        Label {
-            color: item.color.replace('#', ""),
-            name: item.name,
-            description: Some(item.description),
+#[derive(Serialize)]
+pub struct LabelBody {
+    pub name: String,
+    #[serde(serialize_with = "serialize_color")]
+    pub color: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+fn serialize_color<S>(color: &str, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&color.replace('#', ""))
+}
+
+impl From<&Label> for LabelBody {
+    fn from(label: &Label) -> Self {
+        LabelBody {
+            name: label.name.clone(),
+            color: label.color.clone(),
+            description: label.description.clone(),
         }
     }
 }
 
-impl Label {
-    pub fn to_label_options(&self) -> LabelOptions {
-        LabelOptions {
-            color: self.color.replace('#', ""),
-            name: self.name.clone(),
-            description: match self.description.clone() {
-                Some(d) => d,
-                None => String::from(""),
-            },
+impl From<Label> for LabelBody {
+    fn from(label: Label) -> Self {
+        LabelBody {
+            name: label.name,
+            color: label.color,
+            description: label.description,
         }
+    }
+}
+
+#[cfg(test)]
+mod extra_tests {
+    use super::*;
+
+    #[test]
+    fn to_label_body_creates_expected_json() {
+        let label = Label {
+            color: "#FFEEAA".to_string(),
+            name: "bug".to_string(),
+            description: Some("a bug".to_string()),
+        };
+        let body: LabelBody = (&label).into();
+        let v = serde_json::to_value(&body).unwrap();
+        assert_eq!(v["name"], "bug");
+        assert_eq!(v["color"], "FFEEAA");
+        assert_eq!(v["description"], "a bug");
     }
 }
 
@@ -72,13 +101,16 @@ impl Labels {
 }
 
 pub async fn delete_labels(
-    ghlabels: hubcaps::labels::Labels,
-    labels: Vec<hubcaps::labels::Label>,
+    octo: &Octocrab,
+    owner: &str,
+    repo: &str,
+    labels: Vec<octocrab::models::Label>,
 ) -> Result<()> {
     let mut tasks = Vec::new();
     for l in labels.iter() {
         event!(Level::INFO, "Deleting label: \"{}\"", &l.name);
-        tasks.push(ghlabels.delete(&l.name));
+        let uri = format!("/repos/{}/{}/labels/{}", owner, repo, l.name);
+        tasks.push(octo._delete(uri, None::<&()>));
     }
     try_join_all(tasks).await?;
     Ok(())
